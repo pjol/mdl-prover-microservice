@@ -1,0 +1,25 @@
+[package]
+name = "http-server-practice"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+http-body-util = "0.1"
+hyper-util = { version = "0.1", features = ["full"] }
+hyper = { version = "1", features = ["full"] }
+sp1-sdk = "2.0.0"
+alloy-sol-types = "0.7.7"
+jwt-compact = { git = "https://github.com/pjol/jwt-compact-patch.git", features = ["p256"], branch = "master"}
+serde = "1.0.210"
+hex = "0.4.3"
+sha2 = "0.10.8"
+serde_json = "1.0.128"
+alloy = { version = "0.4.2", features = ["full"] }
+eyre = "0.6.12"
+
+
+[patch.crates-io]
+sha2-v0-10-8 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", package = "sha2", branch = "patch-sha2-v0.10.8" }
+
+
