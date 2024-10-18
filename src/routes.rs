@@ -11,7 +11,10 @@ use jwt_compact::alg::VerifyingKey;
 use super::{mk_response, mk_err};
 use serde::{Serialize, Deserialize};
 use std::env;
+use crate::evm;
+
 type PublicKey = <Es256 as Algorithm>::VerifyingKey;
+
 
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -97,9 +100,6 @@ pub async fn prove(req: Request<Incoming>) -> Result<Response<BoxBody<Bytes, Err
 
   env::set_var("SP1_PROVER", "network");
 
-  println!("{}", env::var("SP1_PROVER").unwrap());
-  println!("{}", env::var("SP1_PRIVATE_KEY").unwrap());
-
   if env::var("SP1_PROVER").unwrap() != "network" {
     return mk_err(String::from("use prover network"), hyper::StatusCode::INTERNAL_SERVER_ERROR)
   }
@@ -143,117 +143,15 @@ pub async fn prove(req: Request<Incoming>) -> Result<Response<BoxBody<Bytes, Err
     return mk_err(String::from("Proof failed."), hyper::StatusCode::BAD_REQUEST);
   }
 
+  let (public_values, proof_bytes) = full_proof.unwrap();
+
+  let success = evm::update_credential(public_values, proof_bytes).await;
+
+  if !success.is_ok() {
+    return mk_err(String::from("Tx failed."), hyper::StatusCode::INTERNAL_SERVER_ERROR);
+  }
+
   // Returning JSON-ified ProofFixture.
-  return mk_response(full_proof.unwrap())
+  mk_response(String::from("Success!"))
 }
 
-
-// Executes Plonk proof & returns JSON formatted ProofFixture as a String.
-fn plonk_prove_full_execution(vp: &String, address: &String) -> Result<String, String> {
-  let client = ProverClient::new();
-  let mut stdin = SP1Stdin::new();
-  stdin.write(vp);
-  stdin.write(address);
-  println!("Setting up proof...");
-  let (pk, vk) = client.setup(FULL_EXECUTION_ELF);
-  println!("Proving...");
-  let full_execution_proof = client
-    .prove(&pk, stdin)
-    .plonk()
-    .run();
-  if !full_execution_proof.is_ok() {
-    return Err(String::from("Error running full execution proof."));
-  }
-
-  return Ok(get_proof_calldata(&full_execution_proof.unwrap(), &vk));
-}
-
-
-fn create_proof_fixture(
-  proof: &SP1ProofWithPublicValues,
-  vk: &SP1VerifyingKey,
-) {
-  // Deserialize the public values.
-  let bytes = proof.public_values.as_slice();
-
-  let vals = PublicValues::abi_decode(bytes, true).unwrap();
-
-  // Create the testing fixture so we can test things end-to-end.
-  let fixture = ProofFixture {
-      vkey: vk.bytes32().to_string(),
-      values: format!("0x{}", hex::encode(bytes)),
-      proof: format!("0x{}", hex::encode(proof.bytes())),
-  };
-
-  // Save the fixture to a file.
-  let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures");
-  std::fs::create_dir_all(&fixture_path).expect("failed to create fixture path");
-  std::fs::write(
-      fixture_path.join(format!("{:?}-{:?}-fixture.json", vals.id, vals.issuedAt).to_lowercase()),
-      serde_json::to_string_pretty(&fixture).unwrap(),
-  )
-  .expect("failed to write fixture");
-}
-
-fn get_proof_calldata(
-  proof: &SP1ProofWithPublicValues,
-  vk: &SP1VerifyingKey,
-) -> String {
-  let bytes = proof.public_values.as_slice();
-
-  // Create the testing fixture so we can test things end-to-end.
-  let fixture = ProofFixture {
-      vkey: vk.bytes32().to_string(),
-      values: format!("0x{}", hex::encode(bytes)),
-      proof: format!("0x{}", hex::encode(proof.bytes())),
-  };
-
-  return serde_json::to_string(&fixture).unwrap();
-}
-
-
-fn check_cred_saneness(cred: &String) -> Result<String, String> {
-
-  let untrusted_token = UntrustedToken::new(&cred);
-  if !untrusted_token.is_ok() {
-    return Err(String::from("err"));
-  }
-  let outer_token = untrusted_token.unwrap();
-
-  //TODO: derive sig and hash from cred
-  // let hash = String::from("test");
-  let c: Result<Claims<VPClaims>, jwt_compact::ValidationError> = outer_token.deserialize_claims_unchecked();
-  if !c.is_ok() {
-    return Err(String::from("err"));
-  }
-  let claims = c.unwrap();
-
-  let vp = &claims.custom.verifiable_presentation;
-  let vc = vp.verifiable_credential.first().unwrap();
-
-  let ct = UntrustedToken::new(vc);
-  if !ct.is_ok() {
-    return Err(String::from("err"));
-  }
-  let claims_token = ct.unwrap();
-
-  let kb = hex::decode(DMV_PUBLIC_KEY);
-  if !kb.is_ok() {
-    return Err(String::from("err"));
-  }
-  let key_bytes = kb.unwrap();
-
-  let pk = PublicKey::from_slice(key_bytes.as_slice());
-  if !pk.is_ok() {
-    return Err(String::from("err"));
-  }
-  let public_key = pk.unwrap();
-
-  let valid_vc: Result<Token<VCClaims>, jwt_compact::ValidationError> = Es256.validator(&public_key).validate(&claims_token);
-  if !valid_vc.is_ok() {
-    return Err(String::from("err"));
-  }
-  let verified_credential = valid_vc.unwrap();
-
-  return Ok(String::from("ok"));
-}

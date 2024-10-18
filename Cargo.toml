@@ -17,6 +17,7 @@ sha2 = "0.10.8"
 serde_json = "1.0.128"
 alloy = { version = "0.4.2", features = ["full"] }
 eyre = "0.6.12"
+dotenv = "0.15.0"
 
 
 [patch.crates-io]

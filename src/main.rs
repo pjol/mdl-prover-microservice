@@ -1,3 +1,4 @@
+use dotenv::dotenv;
 use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::body::Bytes;
 use http_body_util::Full;
@@ -26,12 +27,12 @@ pub fn mk_err(s: String, e: hyper::StatusCode) -> Result<Response<BoxBody<Bytes,
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
+    let _ = dotenv();
+
+    let addr: SocketAddr = ([127, 0, 0, 1], 3001).into();
 
     let listener = TcpListener::bind(addr).await?;
     println!("Listening on http://{}", addr);
-
-    evm::test_provider().await;
 
     loop {
         let (stream, _) = listener.accept().await?;
